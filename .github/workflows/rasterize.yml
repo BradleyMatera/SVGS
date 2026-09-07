@@ -1,0 +1,56 @@
+name: Rasterize Scout SVGs
+
+on:
+  push:
+    paths:
+      - "scout/*.svg"
+      - ".github/workflows/rasterize.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  rasterize:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out SVG source
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install rasterizer
+        run: npm install --no-save sharp
+
+      - name: Render PNG assets
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+          const sharp = require('sharp');
+
+          const dir = path.join(process.cwd(), 'scout');
+          const files = fs.readdirSync(dir).filter(name => name.endsWith('.svg'));
+
+          Promise.all(files.map(async name => {
+            const input = path.join(dir, name);
+            const output = path.join(dir, name.replace(/\.svg$/, '.png'));
+            await sharp(input, { density: 144 })
+              .resize({ width: 1600, height: 900, fit: 'inside', withoutEnlargement: false })
+              .png()
+              .toFile(output);
+            console.log(`Rendered ${name} -> ${path.basename(output)}`);
+          })).catch(error => {
+            console.error(error);
+            process.exit(1);
+          });
+          NODE
+
+      - name: Commit PNG assets
+        uses: stefanzweifel/git-auto-commit-action@v7
+        with:
+          commit_message: "Build rasterized PNG versions of Scout SVGs"
+          file_pattern: "scout/*.png"
